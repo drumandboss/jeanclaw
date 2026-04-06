@@ -5,8 +5,8 @@ import { loadConfig, resolveConfigPath, DEFAULT_CONFIG } from '../src/config.js'
 import { writeJsonFile } from '../src/persistence.js'
 import { setLogLevel } from '../src/logger.js'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
-import { mkdir, copyFile, readdir } from 'node:fs/promises'
+import { homedir, platform } from 'node:os'
+import { mkdir, copyFile, readdir, writeFile, unlink } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
@@ -176,6 +176,158 @@ program
       console.log(result)
     } catch (err) {
       console.error('Failed:', (err as Error).message)
+    }
+  })
+
+program
+  .command('install-daemon')
+  .description('Install JeanClaw as a background service that starts on boot')
+  .action(async () => {
+    const { execSync } = await import('node:child_process')
+    const os = platform()
+
+    // Find the jeanclaw binary path
+    let binPath: string
+    try {
+      binPath = execSync('which jeanclaw', { encoding: 'utf-8' }).trim()
+    } catch {
+      // Not globally installed — use the local dist path
+      binPath = join(__dirname, 'jeanclaw.js')
+    }
+
+    // Find node path
+    const nodePath = execSync('which node', { encoding: 'utf-8' }).trim()
+
+    if (os === 'darwin') {
+      // macOS LaunchAgent
+      const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'com.jeanclaw.daemon.plist')
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.jeanclaw.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${nodePath}</string>
+    <string>${binPath}</string>
+    <string>start</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${join(homedir(), '.jeanclaw', 'daemon-stdout.log')}</string>
+  <key>StandardErrorPath</key>
+  <string>${join(homedir(), '.jeanclaw', 'daemon-stderr.log')}</string>
+  <key>WorkingDirectory</key>
+  <string>${homedir()}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${process.env.PATH}</string>
+    <key>HOME</key>
+    <string>${homedir()}</string>
+  </dict>
+</dict>
+</plist>`
+
+      await mkdir(join(homedir(), '.jeanclaw'), { recursive: true })
+      await writeFile(plistPath, plist, 'utf-8')
+
+      try {
+        execSync(`launchctl unload "${plistPath}" 2>/dev/null`, { encoding: 'utf-8' })
+      } catch { /* not loaded yet, fine */ }
+
+      execSync(`launchctl load "${plistPath}"`, { encoding: 'utf-8' })
+
+      console.log('JeanClaw daemon installed and started.')
+      console.log(`  LaunchAgent: ${plistPath}`)
+      console.log(`  Logs: ~/.jeanclaw/daemon-stdout.log`)
+      console.log('')
+      console.log('It will start automatically on login. To stop:')
+      console.log(`  launchctl unload "${plistPath}"`)
+
+    } else if (os === 'linux') {
+      // Linux systemd user service
+      const serviceDir = join(homedir(), '.config', 'systemd', 'user')
+      const servicePath = join(serviceDir, 'jeanclaw.service')
+      const service = `[Unit]
+Description=JeanClaw AI Assistant Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${nodePath} ${binPath} start
+Restart=always
+RestartSec=10
+WorkingDirectory=${homedir()}
+Environment=PATH=${process.env.PATH}
+Environment=HOME=${homedir()}
+
+[Install]
+WantedBy=default.target`
+
+      await mkdir(serviceDir, { recursive: true })
+      await writeFile(servicePath, service, 'utf-8')
+
+      execSync('systemctl --user daemon-reload', { encoding: 'utf-8' })
+      execSync('systemctl --user enable jeanclaw', { encoding: 'utf-8' })
+      execSync('systemctl --user start jeanclaw', { encoding: 'utf-8' })
+
+      // Enable lingering so service runs without active login
+      try {
+        execSync('loginctl enable-linger', { encoding: 'utf-8' })
+      } catch { /* may need root */ }
+
+      console.log('JeanClaw daemon installed and started.')
+      console.log(`  Service: ${servicePath}`)
+      console.log('')
+      console.log('Commands:')
+      console.log('  systemctl --user status jeanclaw')
+      console.log('  journalctl --user -u jeanclaw -f')
+      console.log('  systemctl --user stop jeanclaw')
+
+    } else {
+      console.error(`Unsupported platform: ${os}. Use PM2 instead:`)
+      console.error('  pm2 start jeanclaw -- start')
+      console.error('  pm2 save')
+      console.error('  pm2 startup')
+    }
+  })
+
+program
+  .command('uninstall-daemon')
+  .description('Remove JeanClaw background service')
+  .action(async () => {
+    const { execSync } = await import('node:child_process')
+    const os = platform()
+
+    if (os === 'darwin') {
+      const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'com.jeanclaw.daemon.plist')
+      try {
+        execSync(`launchctl unload "${plistPath}"`, { encoding: 'utf-8' })
+      } catch { /* already unloaded */ }
+      try {
+        await unlink(plistPath)
+      } catch { /* already removed */ }
+      console.log('JeanClaw daemon uninstalled.')
+
+    } else if (os === 'linux') {
+      try {
+        execSync('systemctl --user stop jeanclaw', { encoding: 'utf-8' })
+        execSync('systemctl --user disable jeanclaw', { encoding: 'utf-8' })
+      } catch { /* already stopped */ }
+      const servicePath = join(homedir(), '.config', 'systemd', 'user', 'jeanclaw.service')
+      try {
+        await unlink(servicePath)
+        execSync('systemctl --user daemon-reload', { encoding: 'utf-8' })
+      } catch { /* already removed */ }
+      console.log('JeanClaw daemon uninstalled.')
+
+    } else {
+      console.log('Use PM2 to manage the daemon on this platform.')
     }
   })
 
