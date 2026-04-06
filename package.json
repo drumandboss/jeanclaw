@@ -1,0 +1,32 @@
+{
+  "name": "jeanclaw",
+  "version": "0.1.0",
+  "description": "Claude Code wrapper — turn your Max subscription into a programmable AI assistant via Telegram, iMessage, and HTTP",
+  "type": "module",
+  "bin": {
+    "jeanclaw": "./dist/bin/jeanclaw.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "node dist/bin/jeanclaw.js start",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": ["claude", "ai", "telegram", "assistant", "openclaw"],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^13.1.0",
+    "croner": "^9.0.0",
+    "grammy": "^1.35.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.1.0"
+  }
+}
