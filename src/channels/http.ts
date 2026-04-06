@@ -4,12 +4,17 @@ import type { ChannelAdapter, IncomingMessage, SendOptions, HttpConfig } from '.
 
 const log = createLogger('http')
 
+export interface OutboundCallback {
+  (channel: string, peerId: string, text: string): Promise<void>
+}
+
 export class HttpAdapter implements ChannelAdapter {
   readonly name = 'http'
   private server: Server | null = null
   private messageHandlers: Array<(msg: IncomingMessage) => void> = []
   private readonly config: HttpConfig
   private statusProvider: (() => unknown) | null = null
+  private outboundCallback: OutboundCallback | null = null
 
   constructor(config: HttpConfig) {
     this.config = config
@@ -17,6 +22,10 @@ export class HttpAdapter implements ChannelAdapter {
 
   setStatusProvider(fn: () => unknown): void {
     this.statusProvider = fn
+  }
+
+  setOutboundCallback(fn: OutboundCallback): void {
+    this.outboundCallback = fn
   }
 
   getPort(): number {
@@ -113,6 +122,31 @@ export class HttpAdapter implements ChannelAdapter {
       }
       res.writeHead(202, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ accepted: true }))
+      return
+    }
+
+    if (url.pathname === '/api/outbound' && req.method === 'POST') {
+      if (!this.outboundCallback) {
+        res.writeHead(503, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'outbound not configured' }))
+        return
+      }
+      try {
+        const body = JSON.parse(await this.readBody(req))
+        const { channel, peerId, text } = body as { channel: string; peerId: string; text: string }
+        if (!channel || !peerId || !text) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'missing required fields: channel, peerId, text' }))
+          return
+        }
+        await this.outboundCallback(channel, peerId, text)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ sent: true }))
+      } catch (err) {
+        log.error('outbound send failed', { error: (err as Error).message })
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: (err as Error).message }))
+      }
       return
     }
 

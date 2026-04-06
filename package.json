@@ -24,13 +24,21 @@
   "engines": {
     "node": ">=22"
   },
-  "keywords": ["claude", "ai", "telegram", "assistant", "openclaw", "jeanclaw"],
+  "keywords": [
+    "claude",
+    "ai",
+    "telegram",
+    "assistant",
+    "openclaw",
+    "jeanclaw"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/davidstroiazzo/jeanclaw"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "commander": "^13.1.0",
     "croner": "^9.0.0",
     "grammy": "^1.35.0"

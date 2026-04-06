@@ -7,6 +7,7 @@ import { TelegramAdapter } from './channels/telegram.js'
 import { iMessageAdapter } from './channels/imessage.js'
 import { HttpAdapter } from './channels/http.js'
 import { createLogger } from './logger.js'
+import { writeMcpConfig } from './mcp-config.js'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -115,6 +116,10 @@ export class Daemon {
           workspace: this.config!.workspace,
         },
       }))
+      httpAdapter.setOutboundCallback(async (channel, peerId, text) => {
+        if (!this.router) throw new Error('Router not initialized')
+        await this.router.send(channel, peerId, text)
+      })
       this.router.addAdapter(httpAdapter)
     }
 
@@ -198,6 +203,10 @@ export class Daemon {
         }
       },
     })
+
+    // Write MCP config so Claude sessions can use JeanClaw tools
+    const httpPort = this.config.channels.http.enabled ? this.config.channels.http.port : 18790
+    await writeMcpConfig(httpPort, this.config.workspace)
 
     await this.router.startAll()
     this.scheduler.start()

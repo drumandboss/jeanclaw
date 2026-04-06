@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface as ReadlineInterface } from 'node:readline'
 import { EventEmitter } from 'node:events'
 import { createLogger } from './logger.js'
+import { MCP_CONFIG_PATH } from './mcp-config.js'
 import type { ClaudeEvent } from './types.js'
 
 const log = createLogger('claude-session')
@@ -77,6 +78,9 @@ export class ClaudeSession extends EventEmitter {
     if (this.opts.disallowedTools?.length) {
       args.push('--disallowed-tools', ...this.opts.disallowedTools)
     }
+
+    // MCP config for JeanClaw tools
+    args.push('--mcp-config', MCP_CONFIG_PATH)
 
     return args
   }
