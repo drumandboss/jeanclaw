@@ -55,7 +55,14 @@ export interface IncomingMessage {
   readonly peerId: string
   readonly text: string
   readonly media?: readonly MediaAttachment[]
+  readonly mediaPath?: string
   readonly replyTo?: string
+}
+
+export type CommandType = 'new' | 'reset' | 'status' | 'compact'
+
+export interface CommandCallback {
+  (channelKey: string, command: CommandType): Promise<string>
 }
 
 export interface MediaAttachment {

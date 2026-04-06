@@ -9,6 +9,7 @@ const log = createLogger('session-manager')
 const MAX_FAILURES = 3
 const BASE_BACKOFF_MS = 1000
 const MAX_BACKOFF_MS = 30_000
+const IDLE_TIMEOUT_MS = 4 * 60 * 60 * 1000 // 4 hours
 
 export interface SessionManagerOptions {
   readonly workspaceDir: string
@@ -46,7 +47,18 @@ export class SessionManager {
   async getOrCreate(channelKey: string): Promise<ClaudeSession> {
     const key = this.resolveKey(channelKey)
     const existing = this.sessions.get(key)
-    if (existing?.isAlive()) return existing
+
+    // Idle timeout: if session hasn't been used for 4 hours, reset it
+    if (existing?.isAlive()) {
+      const idleMs = Date.now() - existing.lastActivity
+      if (idleMs > IDLE_TIMEOUT_MS) {
+        log.info('session idle timeout, resetting', { key, idleMs })
+        await existing.stop()
+        this.sessions.delete(key)
+      } else {
+        return existing
+      }
+    }
 
     const breaker = this.circuitBreakers.get(key)
     if (breaker && breaker.failures >= MAX_FAILURES) {
@@ -99,6 +111,40 @@ export class SessionManager {
       this.schedulePersist()
       log.info('session reset', { key })
     }
+  }
+
+  async compact(channelKey: string): Promise<void> {
+    const key = this.resolveKey(channelKey)
+    const session = this.sessions.get(key)
+    if (session?.isAlive()) {
+      session.send('/compact')
+      log.info('session compact requested', { key })
+    }
+  }
+
+  getSessionInfo(channelKey: string): { sessionId: string | undefined; turnCount: number; alive: boolean; lastActivity: number } | null {
+    const key = this.resolveKey(channelKey)
+    const session = this.sessions.get(key)
+    if (!session) return null
+    return {
+      sessionId: session.sessionId,
+      turnCount: session.turnCount,
+      alive: session.isAlive(),
+      lastActivity: session.lastActivity,
+    }
+  }
+
+  async resetAll(): Promise<void> {
+    const keys = Array.from(this.sessions.keys())
+    for (const key of keys) {
+      const session = this.sessions.get(key)
+      if (session) {
+        await session.stop()
+        this.sessions.delete(key)
+      }
+    }
+    this.schedulePersist()
+    log.info('all sessions reset')
   }
 
   listSessions(): Array<{

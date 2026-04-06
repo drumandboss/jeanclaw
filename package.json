@@ -6,19 +6,30 @@
   "bin": {
     "jeanclaw": "./dist/bin/jeanclaw.js"
   },
+  "files": [
+    "dist/",
+    "templates/",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "node dist/bin/jeanclaw.js start",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "engines": {
     "node": ">=22"
   },
-  "keywords": ["claude", "ai", "telegram", "assistant", "openclaw"],
+  "keywords": ["claude", "ai", "telegram", "assistant", "openclaw", "jeanclaw"],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/davidstroiazzo/jeanclaw"
+  },
   "dependencies": {
     "commander": "^13.1.0",
     "croner": "^9.0.0",

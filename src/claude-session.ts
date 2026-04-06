@@ -130,7 +130,7 @@ export class ClaudeSession extends EventEmitter {
     }
 
     this._turnCount++
-    const payload = JSON.stringify({ type: 'user', content: text })
+    const payload = JSON.stringify({ type: 'user', message: { role: 'user', content: text } })
     this.proc.stdin.write(payload + '\n')
     log.debug('sent message', { sessionId: this._sessionId, turnCount: this._turnCount })
   }
