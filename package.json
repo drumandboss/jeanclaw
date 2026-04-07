@@ -16,13 +16,12 @@
     "README.md"
   ],
   "scripts": {
-    "build": "./node_modules/.bin/tsc",
+    "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "node dist/bin/jeanclaw.js start",
     "lint": "tsc --noEmit",
-    "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
   "engines": {
