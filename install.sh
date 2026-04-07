@@ -2,91 +2,129 @@
 set -e
 
 echo ""
-echo "  JeanClaw Installer"
-echo "  ==================="
+echo "  JeanClaw — One-Command Setup"
+echo "  =============================="
 echo ""
 
-# Check Node.js
-if ! command -v node &> /dev/null; then
-  echo "ERROR: Node.js not found. Install Node.js 22+ first:"
-  echo "  https://nodejs.org/"
-  exit 1
-fi
+OS="$(uname -s)"
 
-NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-if [ "$NODE_VERSION" -lt 22 ]; then
-  echo "ERROR: Node.js 22+ required. You have $(node -v)"
-  echo "  Update: https://nodejs.org/"
-  exit 1
+# ── Step 1: Node.js ──────────────────────────────────────────
+
+install_node() {
+  echo "  Installing Node.js 22..."
+  if [ "$OS" = "Darwin" ]; then
+    if command -v brew &> /dev/null; then
+      brew install node@22
+      brew link node@22 --force --overwrite 2>/dev/null || true
+    else
+      echo "  Installing Homebrew first..."
+      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
+      brew install node@22
+    fi
+  elif [ "$OS" = "Linux" ]; then
+    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+  fi
+}
+
+if ! command -v node &> /dev/null; then
+  install_node
+elif [ "$(node -v | cut -d'v' -f2 | cut -d'.' -f1)" -lt 22 ]; then
+  echo "  Node.js $(node -v) is too old. Need 22+."
+  install_node
 fi
 echo "  Node.js: $(node -v)"
 
-# Check Claude Code
+# ── Step 2: Claude Code CLI ──────────────────────────────────
+
 if ! command -v claude &> /dev/null; then
-  echo "ERROR: Claude Code CLI not found."
-  echo "  Install: https://docs.anthropic.com/en/docs/claude-code"
-  echo "  Then log in with: claude"
+  echo ""
+  echo "  Installing Claude Code CLI..."
+  npm install -g @anthropic-ai/claude-code 2>&1 | tail -1
+fi
+
+if ! command -v claude &> /dev/null; then
+  echo "  ERROR: Claude Code CLI installation failed."
+  echo "  Install manually: npm install -g @anthropic-ai/claude-code"
   exit 1
 fi
-echo "  Claude Code: $(claude --version 2>/dev/null || echo 'installed')"
+echo "  Claude Code: $(claude --version 2>/dev/null | head -1)"
 
-# Install location
+# Check if logged in
+if ! claude auth status 2>&1 | grep -qi "logged in\|authenticated\|active"; then
+  echo ""
+  echo "  You need to log in to Claude Code with your Max subscription."
+  echo "  Opening Claude Code login..."
+  echo ""
+  claude auth login 2>&1 || claude 2>&1 || true
+  echo ""
+  echo "  Once logged in, run this installer again."
+  exit 0
+fi
+
+# ── Step 3: Install JeanClaw ─────────────────────────────────
+
 INSTALL_DIR="$HOME/.jeanclaw/app"
 
-if [ -d "$INSTALL_DIR" ]; then
-  echo "  Updating existing installation..."
+if [ -d "$INSTALL_DIR/.git" ]; then
+  echo "  Updating JeanClaw..."
   cd "$INSTALL_DIR"
   git pull --ff-only 2>/dev/null || {
-    echo "  Fresh install (couldn't pull)..."
     rm -rf "$INSTALL_DIR"
     git clone https://github.com/drumandboss/jeanclaw.git "$INSTALL_DIR"
     cd "$INSTALL_DIR"
   }
 else
-  echo "  Cloning JeanClaw..."
+  echo "  Installing JeanClaw..."
+  rm -rf "$INSTALL_DIR"
   mkdir -p "$(dirname "$INSTALL_DIR")"
   git clone https://github.com/drumandboss/jeanclaw.git "$INSTALL_DIR"
   cd "$INSTALL_DIR"
 fi
 
-# Install dependencies
-echo "  Installing dependencies..."
 npm install --production 2>&1 | tail -1
 
-# Create bin symlink
+# Symlink binary
 BIN_DIR="$HOME/.local/bin"
 mkdir -p "$BIN_DIR"
 ln -sf "$INSTALL_DIR/dist/bin/jeanclaw.js" "$BIN_DIR/jeanclaw"
 chmod +x "$INSTALL_DIR/dist/bin/jeanclaw.js"
 
-# Check if ~/.local/bin is in PATH
-if ! echo "$PATH" | grep -q "$BIN_DIR"; then
-  SHELL_RC=""
-  if [ -f "$HOME/.zshrc" ]; then
-    SHELL_RC="$HOME/.zshrc"
-  elif [ -f "$HOME/.bashrc" ]; then
-    SHELL_RC="$HOME/.bashrc"
-  fi
-
-  if [ -n "$SHELL_RC" ]; then
-    if ! grep -q '.local/bin' "$SHELL_RC" 2>/dev/null; then
-      echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
-      echo ""
-      echo "  Added ~/.local/bin to PATH in $SHELL_RC"
-      echo "  Run: source $SHELL_RC"
-    fi
+# Add to PATH if needed
+if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
+  SHELL_RC="$HOME/.zshrc"
+  [ ! -f "$SHELL_RC" ] && SHELL_RC="$HOME/.bashrc"
+  if [ -f "$SHELL_RC" ] && ! grep -q '.local/bin' "$SHELL_RC" 2>/dev/null; then
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
   fi
   export PATH="$BIN_DIR:$PATH"
 fi
 
+# ── Step 4: Setup (if not already configured) ────────────────
+
+if [ ! -f "$HOME/.jeanclaw/config.json" ]; then
+  echo ""
+  echo "  Now let's set up your bot."
+  echo ""
+  jeanclaw setup
+fi
+
+# ── Step 5: Install as daemon ────────────────────────────────
+
 echo ""
-echo "  JeanClaw installed!"
+read -p "  Start JeanClaw on boot? (Y/n) " START_ON_BOOT
+START_ON_BOOT=${START_ON_BOOT:-Y}
+
+if [[ "$START_ON_BOOT" =~ ^[Yy] ]]; then
+  jeanclaw install-daemon
+else
+  echo ""
+  echo "  To start manually: jeanclaw start"
+  echo "  To install later:  jeanclaw install-daemon"
+fi
+
 echo ""
-echo "  Next steps:"
-echo "    jeanclaw setup           # configure your bot"
-echo "    jeanclaw start           # start the daemon"
-echo "    jeanclaw install-daemon  # auto-start on boot"
-echo ""
-echo "  If 'jeanclaw' is not found, run:"
-echo "    source ~/.zshrc"
+echo "  Done! JeanClaw is ready."
+echo "  Message your Telegram bot to get started."
 echo ""
