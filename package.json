@@ -16,7 +16,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "npx tsc",
+    "build": "./node_modules/.bin/tsc",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
