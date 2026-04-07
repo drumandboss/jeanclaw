@@ -8,24 +8,33 @@ echo ""
 
 OS="$(uname -s)"
 
+# ── Source nvm if available (many systems have Node via nvm) ──
+
+if [ -f "$HOME/.nvm/nvm.sh" ]; then
+  export NVM_DIR="$HOME/.nvm"
+  source "$NVM_DIR/nvm.sh"
+fi
+
 # ── Step 1: Node.js ──────────────────────────────────────────
 
 install_node() {
   echo "  Installing Node.js 22..."
-  if [ "$OS" = "Darwin" ]; then
-    if command -v brew &> /dev/null; then
-      brew install node@22
-      brew link node@22 --force --overwrite 2>/dev/null || true
-    else
-      echo "  Installing Homebrew first..."
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-      eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
-      brew install node@22
-    fi
-  elif [ "$OS" = "Linux" ]; then
-    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-    sudo apt-get install -y nodejs
+
+  # Try nvm first (no sudo needed)
+  if [ -f "$HOME/.nvm/nvm.sh" ]; then
+    source "$HOME/.nvm/nvm.sh"
+    nvm install 22
+    nvm use 22
+    return
   fi
+
+  # Install nvm + node (no sudo needed)
+  echo "  Installing nvm (Node Version Manager)..."
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+  export NVM_DIR="$HOME/.nvm"
+  source "$NVM_DIR/nvm.sh"
+  nvm install 22
+  nvm use 22
 }
 
 if ! command -v node &> /dev/null; then
@@ -45,6 +54,7 @@ if ! command -v claude &> /dev/null; then
 fi
 
 if ! command -v claude &> /dev/null; then
+  echo ""
   echo "  ERROR: Claude Code CLI installation failed."
   echo "  Install manually: npm install -g @anthropic-ai/claude-code"
   exit 1
@@ -55,11 +65,9 @@ echo "  Claude Code: $(claude --version 2>/dev/null | head -1)"
 if ! claude auth status 2>&1 | grep -qi "logged in\|authenticated\|active"; then
   echo ""
   echo "  You need to log in to Claude Code with your Max subscription."
-  echo "  Opening Claude Code login..."
+  echo "  Run:  claude auth login"
   echo ""
-  claude auth login 2>&1 || claude 2>&1 || true
-  echo ""
-  echo "  Once logged in, run this installer again."
+  echo "  Then run this installer again."
   exit 0
 fi
 
